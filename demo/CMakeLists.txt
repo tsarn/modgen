@@ -42,10 +42,13 @@ modgen_define_module(
   # Fully-qualified names look like this: std::this_thread::sleep_for
   # Note that they don't include the leading ::
   FILTER "(glfw|GLFW).*"
-  DEPENDS glfw
   # Note: GLFW uses #defines to declare its constants
   # Modules cannot export them, and the module will not include them
 )
+
+# Instead of using DEPENDS in modgen_define_module, you can also
+# link publically your dependencies to the target
+target_link_libraries(glfw_module PUBLIC glfw)
 
 # This is a shortcut to generate a module named "std", containing
 # everything from the standard C++ library
