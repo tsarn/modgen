@@ -29,7 +29,7 @@ static void usage() {
     std::cerr << "\n";
     std::cerr << "Options:\n";
     std::cerr << "  -o <path>              Write output to the specified file\n";
-    std::cerr << "  -n <namespaces>        Specify the semicolon separated namespaces to export\n";
+    std::cerr << "  -n <namespaces>        Specify the semicolon separated list of namespaces to export\n";
     std::cerr << "  -f <regex>             Only export the names matching this regex\n";
     std::cerr << "  -e <regex>             Do not export the names matching this regex\n";
     std::cerr << "  -p                     Instead of generating a module, simply output the list of names\n";
