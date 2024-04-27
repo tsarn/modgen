@@ -70,7 +70,7 @@ Usage: modgen_ast_parser [options] <ast file>
 
 Options:
   -o <path>              Write output to the specified file
-  -n <namespaces>        Specify the semicolon separated list of namespaces to export
+  -n <namespaces>        Specify the comma separated list of namespaces to export
   -f <regex>             Only export the names matching this regex
   -e <regex>             Do not export the names matching this regex
   -p                     Instead of generating a module, simply output the list of names
