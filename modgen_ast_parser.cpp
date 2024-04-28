@@ -96,7 +96,9 @@ static void parseArgs(int argc, char **argv) {
 static CXIndex index;
 static CXTranslationUnit translationUnit;
 static std::set<std::string> exportedNames;
+static std::map<std::string, std::string> namespaceAliases;
 static int depth = 0;
+static std::string currentNamespaceAlias;
 
 static auto fromClangString(CXString s) {
     std::string owned_string{clang_getCString(s)};
@@ -104,9 +106,9 @@ static auto fromClangString(CXString s) {
     return owned_string;
 }
 
-static auto getFullyQualifiedName(CXCursor cursor) {
+static auto getFullyQualifiedName(CXCursor cursor, bool lexical = true) {
     std::vector<std::string> path;
-    for (auto cur = cursor;; cur = clang_getCursorLexicalParent(cur)) {
+    for (auto cur = cursor;; cur = (lexical ? clang_getCursorLexicalParent(cur) : clang_getCursorSemanticParent(cur))) {
         auto kind = clang_getCursorKind(cur);
         if (clang_isInvalid(kind) || kind == CXCursor_TranslationUnit) {
             break;
@@ -135,7 +137,7 @@ static auto getFullyQualifiedName(CXCursor cursor) {
 }
 
 static auto visitor(CXCursor cursor, CXCursor parent, CXClientData clientData) -> CXChildVisitResult {
-    CXCursorKind kind = clang_getCursorKind(cursor);
+    auto kind = clang_getCursorKind(cursor);
     bool willRecurse = false;
     bool willEmitName = false;
     bool isAnonymous = clang_Cursor_isAnonymous(cursor);
@@ -153,6 +155,11 @@ static auto visitor(CXCursor cursor, CXCursor parent, CXClientData clientData) -
         isOutOfLine = spKind != CXCursor_TranslationUnit && spKind != CXCursor_Namespace && spKind != CXCursor_UnexposedDecl;
     }
 
+    // for (int i = 0; i < depth; ++i) {
+    //     std::cerr << "    ";
+    // }
+    // std::cerr << fqn << " " << fromClangString(clang_getCursorKindSpelling(kind)) << std::endl;
+
     if (kind == CXCursor_FunctionDecl || kind == CXCursor_VarDecl || kind == CXCursor_FunctionTemplate) {
         if (linkage == CXLinkage_External) {
             willEmitName = true;
@@ -167,17 +174,26 @@ static auto visitor(CXCursor cursor, CXCursor parent, CXClientData clientData) -
         willEmitName = true;
     }
 
+    if (kind == CXCursor_NamespaceAlias) {
+        // oh my god, somebody please tell me there's a better way to do this
+        // for some reason, NamespaceRef doesn't want to give me its fqn otherwise
+        auto policy = clang_getCursorPrintingPolicy(cursor);
+        clang_PrintingPolicy_setProperty(policy, CXPrintingPolicy_FullyQualifiedName, 1);
+        auto sourceNamespace = fromClangString(clang_getCursorPrettyPrinted(cursor, policy));
+        auto spacePos = sourceNamespace.rfind(' ');
+        if (spacePos != std::string::npos) {
+            sourceNamespace = sourceNamespace.substr(spacePos + 1);
+        }
+        clang_PrintingPolicy_dispose(policy);
+        namespaceAliases[fqn] = sourceNamespace;
+    }
+
     if (isAnonymous || isOutOfLine || fqn.contains(' ')) {
         willEmitName = false;
     }
 
     if (willEmitName) {
-        bool matchesFilter = !arguments.filter || std::regex_match(fqn, *arguments.filter);
-        bool matchesExclude = arguments.exclude && std::regex_match(fqn, *arguments.exclude);
-
-        if (matchesFilter && !matchesExclude) {
-            exportedNames.emplace(fqn);
-        }
+        exportedNames.emplace(fqn);
     }
 
     if (willRecurse) {
@@ -216,25 +232,43 @@ static void outputExports(auto&& stream) {
         if (idx == std::string::npos) {
             namespaces[""].emplace_back(name);
         } else {
-            namespaces[name.substr(0, idx)].emplace_back(name);
+            namespaces[name.substr(0, idx)].emplace_back(name.substr(idx + 2));
+        }
+    }
+
+    for (const auto& [alias_ns, ns] : namespaceAliases) {
+        if (!namespaces.contains(ns)) {
+            continue;
+        }
+
+        for (const auto& name : namespaces.at(ns)) {
+            std::cerr << alias_ns << " / " << name << std::endl;
+            namespaces[alias_ns].push_back(name);
         }
     }
 
     for (const auto& [ns, names] : namespaces) {
-        if (!ns.empty()) {
-            stream << std::format("export namespace {} {{\n", ns);
-        }
+        bool generated_export_namespace = false;
 
         for (const auto& name : names) {
-            if (!ns.empty()) {
-                stream << "  ";
-            } else {
-                stream << "export ";
+            auto fqn = (ns == "") ? name : (ns + "::" + name);
+            bool matchesFilter = !arguments.filter || std::regex_match(fqn, *arguments.filter);
+            bool matchesExclude = arguments.exclude && std::regex_match(fqn, *arguments.exclude);
+            if (matchesFilter && !matchesExclude) {
+                if (!generated_export_namespace && ns != "") {
+                    stream << std::format("export namespace {} {{\n", ns);
+                    generated_export_namespace = true;
+                }
+                if (!ns.empty()) {
+                    stream << "  ";
+                } else {
+                    stream << "export ";
+                }
+                stream << std::format("using ::{};\n", fqn);
             }
-            stream << std::format("using ::{};\n", name);
         }
 
-        if (!ns.empty()) {
+        if (generated_export_namespace) {
             stream << "}\n";
         }
     }
