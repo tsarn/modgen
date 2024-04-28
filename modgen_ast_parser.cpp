@@ -88,7 +88,7 @@ static void parseArgs(int argc, char **argv) {
         }
 
         if (!arguments.exclude) {
-            arguments.exclude = std::regex{"^(.*::)?(_[_A-Z]|_*detail).*$"};
+            arguments.exclude = std::regex{"^(.*::)?(_[_a-zA-Z]|_*detail).*$"};
         }
     }
 }
@@ -186,6 +186,7 @@ static auto visitor(CXCursor cursor, CXCursor parent, CXClientData clientData) -
         }
         clang_PrintingPolicy_dispose(policy);
         namespaceAliases[fqn] = sourceNamespace;
+        willEmitName = true;
     }
 
     if (isAnonymous || isOutOfLine || fqn.contains(' ')) {
@@ -225,46 +226,72 @@ static void outputNames(auto&& stream) {
     }
 }
 
+struct ExportedName {
+    std::string name;
+    std::string alias;
+};
+
 static void outputExports(auto&& stream) {
-    std::map<std::string, std::vector<std::string>> namespaces;
-    for (const auto& name : exportedNames) {
-        auto idx = name.rfind("::");
-        if (idx == std::string::npos) {
-            namespaces[""].emplace_back(name);
-        } else {
-            namespaces[name.substr(0, idx)].emplace_back(name.substr(idx + 2));
+    std::map<std::string, std::vector<ExportedName>> namespaces;
+
+    for (const auto& fqn : exportedNames) {
+        bool matchesFilter = !arguments.filter || std::regex_match(fqn, *arguments.filter);
+        bool matchesExclude = arguments.exclude && std::regex_match(fqn, *arguments.exclude);
+        if (!matchesFilter) {
+            for (const auto& alias : namespaceAliases) {
+                if (std::regex_match(alias.first, *arguments.filter)) {
+                    std::string prefix = alias.second + "::";
+                    if (fqn.starts_with(prefix)) {
+                        matchesFilter = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (matchesFilter && !matchesExclude) {
+            auto idx = fqn.rfind("::");
+            std::string alias;
+            if (namespaceAliases.contains(fqn)) {
+                alias = namespaceAliases.at(fqn);
+            }
+            if (idx == std::string::npos) {
+                namespaces[""].push_back(ExportedName{fqn, alias});
+            } else {
+                namespaces[fqn.substr(0, idx)].push_back(ExportedName{fqn.substr(idx + 2), alias});
+            }
         }
     }
 
-    for (const auto& [alias_ns, ns] : namespaceAliases) {
-        if (!namespaces.contains(ns)) {
-            continue;
-        }
+    // for (const auto& [alias_ns, ns] : namespaceAliases) {
+    //     if (!namespaces.contains(ns)) {
+    //         continue;
+    //     }
 
-        for (const auto& name : namespaces.at(ns)) {
-            std::cerr << alias_ns << " / " << name << std::endl;
-            namespaces[alias_ns].push_back(name);
-        }
-    }
+    //     for (const auto& name : namespaces.at(ns)) {
+    //         namespaces[alias_ns].emplace(name);
+    //     }
+    // }
 
     for (const auto& [ns, names] : namespaces) {
         bool generated_export_namespace = false;
 
         for (const auto& name : names) {
-            auto fqn = (ns == "") ? name : (ns + "::" + name);
-            bool matchesFilter = !arguments.filter || std::regex_match(fqn, *arguments.filter);
-            bool matchesExclude = arguments.exclude && std::regex_match(fqn, *arguments.exclude);
-            if (matchesFilter && !matchesExclude) {
-                if (!generated_export_namespace && ns != "") {
-                    stream << std::format("export namespace {} {{\n", ns);
-                    generated_export_namespace = true;
-                }
-                if (!ns.empty()) {
-                    stream << "  ";
-                } else {
-                    stream << "export ";
-                }
+            auto fqn = (ns == "") ? name.name : (ns + "::" + name.name);
+            if (!generated_export_namespace && ns != "") {
+                stream << std::format("export namespace {} {{\n", ns);
+                generated_export_namespace = true;
+            }
+            if (!ns.empty()) {
+                stream << "  ";
+            } else {
+                stream << "export ";
+            }
+
+            if (name.alias == "") {
                 stream << std::format("using ::{};\n", fqn);
+            } else {
+                stream << std::format("namespace {} = {};\n", name.name, name.alias);
             }
         }
 
