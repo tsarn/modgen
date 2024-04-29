@@ -86,7 +86,7 @@ export module ${ARG_NAME};
     endif()
 
     if (DEFINED ARG_EXCLUDE)
-        list(APPEND PARSER_CMD -f "${ARG_EXCLUDE}")
+        list(APPEND PARSER_CMD -e "${ARG_EXCLUDE}")
     endif()
 
     set(COMPILER_WRAPPER_CMD

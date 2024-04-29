@@ -2,7 +2,7 @@ function(modgen_enable_std)
     cmake_parse_arguments(
             ARG
             ""
-            "CXX_STANDARD"
+            "CXX_STANDARD;EXCLUDE"
             "DISABLE"
             ${ARGN}
     )
@@ -20,6 +20,7 @@ function(modgen_enable_std)
             NAME std
             INCLUDES ${INCLUDES}
             NAMESPACES std
+            EXCLUDE "${ARG_EXCLUDE}"
             IGNORE_NONEXISTENT_INCLUDES
     )
     if (NOT DEFINED ARG_CXX_STANDARD)
