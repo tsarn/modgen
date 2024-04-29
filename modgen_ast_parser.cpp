@@ -87,9 +87,9 @@ static void parseArgs(int argc, char **argv) {
             arguments.filter = std::regex{std::format("^({})(::.*)?$", filterString)};
         }
 
-        if (!arguments.exclude) {
-            arguments.exclude = std::regex{"^(.*::)?(_[_a-zA-Z]|_*detail).*$"};
-        }
+        // if (!arguments.exclude) {
+        //     arguments.exclude = std::regex{"^(.*::)?(_[_a-zA-Z]|_*detail).*$"};
+        // }
     }
 }
 
